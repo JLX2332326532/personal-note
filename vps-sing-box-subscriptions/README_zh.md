@@ -232,3 +232,39 @@ PY
 ---
 
 参考：[Sing-Box-Plus 原项目](https://github.com/Alvin9999-newpac/Sing-Box-Plus) · [Caddy 自动 HTTPS](https://caddyserver.com/docs/automatic-https) · [English README](./README.md)
+
+## 11. 大陆直连、境外代理分流规则（新增）
+
+规则原则：**局域网直连 → 常用境外服务代理 → 中国大陆域名及 IP 直连 → 其余流量代理**。不同客户端的节点订阅格式不同，因此采用两种配置方式：
+
+| 客户端 | 节点订阅 | 分流规则如何使用 |
+| --- | --- | --- |
+| Clash Verge Rev / Mihomo | 原有 `.clash.yaml` | **规则已内置**，客户端更新订阅后使用“规则”模式即可 |
+| Shadowrocket | 原有 `.shadowrocket.txt` | **额外导入** `.shadowrocket.conf` 作为配置，再选择一个代理节点 |
+| v2rayN | 原有 `.txt` | **额外导入** `.v2rayn-routing.json` 作为自定义路由规则（不是节点订阅）；确保 geosite/geoip 数据可用 |
+
+**为什么不是把规则直接写进三个节点订阅？** v2rayN、Shadowrocket 的 Base64 节点列表只包含节点数据，不是路由策略文件。简单地在 Base64 文本里混入路由规则会破坏兼容性。本项目保留原来的三个订阅链接不变，并对这两个客户端提供独立的规则配置链接。
+
+### 查看全部五个地址
+
+```bash
+python3 - <<'PY'
+from pathlib import Path
+url = Path('/root/subscription-url.txt').read_text().strip()
+base = url.removesuffix('.txt')
+for name, extension in [
+    ('v2rayN 节点', '.txt'),
+    ('Mihomo 节点+分流', '.clash.yaml'),
+    ('Shadowrocket 节点', '.shadowrocket.txt'),
+    ('Shadowrocket 分流配置', '.shadowrocket.conf'),
+    ('v2rayN 自定义路由', '.v2rayn-routing.json'),
+]:
+    print(f'{name}: {base}{extension}')
+PY
+```
+
+**规则来源：** Mihomo 使用 [MetaCubeX/meta-rules-dat](https://github.com/MetaCubeX/meta-rules-dat) 的 CN 域名及 CN IP 的 MRS 规则（客户端每24小时刷新一次）；Shadowrocket 使用 [blackmatrix7/ios_rule_script](https://github.com/blackmatrix7/ios_rule_script/tree/master/rule/Shadowrocket/China) 的 China.list 与 China_Domain.list；v2rayN 使用官方[自定义路由 JSON 规则格式](https://github.com/2dust/v2rayN/wiki/Description-of-custom-routing-rules)，包含 `geosite:cn`、`geoip:cn` 等条目。
+
+**更新当前 VPS 的安装：** 从仓库重新下载并执行 `auto-sync-install.sh`，然后运行 `systemctl start sbp-sub-sync.service`；新 VPS 的 `install.sh` 会拉取最新版同步脚本。此操作保留原 Token 和原三个节点订阅地址，新增两份配套规则文件。
+
+**使用限制：** 国内规则并不能保证所有网站的最终链路或 DNS 都完全按预期；需要客户端工作在支持规则的模式下。Mihomo 的远程规则从 GitHub Raw 下载，可能需要代理连接。v2rayN 自定义规则需手动导入，不能通过普通 Base64 节点订阅自动更新；Shadowrocket 配置也需要单独导入。规则源与内核协议可能变化，更新后请在实际客户端验证。
