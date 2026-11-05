@@ -46,3 +46,13 @@ systemctl status caddy
 - Never paste node links/UUIDs/passwords into issues or Git commits. Rotate credentials if exposed.
 
 **Sources:** https://github.com/Alvin9999-newpac/Sing-Box-Plus (third-party script); https://caddyserver.com/docs/automatic-https
+## China-direct / international-proxy routing (2026 update)
+
+The Mihomo `.clash.yaml` subscription includes CN-domain/CN-IP remote **MRS** rule providers maintained by [MetaCubeX/meta-rules-dat](https://github.com/MetaCubeX/meta-rules-dat). Private networks are DIRECT, common international services are explicitly routed to the selectable proxy group, CN domains/IPs are DIRECT, and the final MATCH uses the proxy group. Rule-provider refresh interval is 24h, independent from VPS port changes. A rule-provider download may fail if GitHub Raw is unreachable from the client; check the app's rule provider status.
+
+Node-only Base64 subscriptions cannot reliably change per-client routing, so the same HTTPS site now publishes **additional** configuration files:
+- `https://HOST/TOKEN.shadowrocket.conf`: Shadowrocket routing config referencing [blackmatrix7 China rules](https://github.com/blackmatrix7/ios_rule_script/tree/master/rule/Shadowrocket/China); **import as a configuration**, not as a node subscription. Continue using `.shadowrocket.txt` for nodes and select a proxy node.
+- `https://HOST/TOKEN.v2rayn-routing.json`: v2rayN custom routing rules array following its [official format](https://github.com/2dust/v2rayN/wiki/Description-of-custom-routing-rules); **import/copy into the client's routing settings** separately from the `.txt` node subscription. Ensure routing geo-data are installed/up-to-date.
+- `https://HOST/TOKEN.txt` and `TOKEN.shadowrocket.txt`: remain node lists with unchanged URL and format.
+
+The additional configuration URLs contain the same private URL token. As before, do **not** publish actual URLs. International traffic defaults to proxy, not to DIRECT. Rules do not override proxy functionality, DNS leaks, or client service mode; verify routing from the specific client and network.
