@@ -124,6 +124,56 @@ def convert(link):
     return p
 
 
+
+def routing_rules():
+    """v2rayN custom routing-rule array (separate from node subscription)."""
+    return [
+        {'remarks': '局域网域名直连', 'outboundTag': 'direct',
+         'domain': ['geosite:private'], 'enabled': True},
+        {'remarks': '局域网 IP 直连', 'outboundTag': 'direct',
+         'ip': ['geoip:private'], 'enabled': True},
+        {'remarks': '常用境外服务优先代理', 'outboundTag': 'proxy',
+         'domain': ['domain:github.com', 'domain:githubusercontent.com',
+                    'domain:openai.com', 'domain:chatgpt.com',
+                    'domain:google.com', 'domain:youtube.com'], 'enabled': True},
+        {'remarks': '中国大陆域名直连', 'outboundTag': 'direct',
+         'domain': ['geosite:cn'], 'enabled': True},
+        {'remarks': '中国大陆 IP 直连', 'outboundTag': 'direct',
+         'ip': ['geoip:cn'], 'enabled': True},
+        {'remarks': '其余流量代理', 'outboundTag': 'proxy',
+         'port': '0-65535', 'enabled': True},
+    ]
+
+
+def shadowrocket_rules():
+    """Import this .conf under Shadowrocket Configuration, nodes remain in .txt."""
+    return """# CN direct / international proxy. Select a node in Shadowrocket.
+[General]
+bypass-system = true
+skip-proxy = 192.168.0.0/16, 10.0.0.0/8, 172.16.0.0/12, localhost, *.local
+ipv6 = true
+prefer-ipv6 = false
+
+[Rule]
+IP-CIDR,127.0.0.0/8,DIRECT,no-resolve
+IP-CIDR,10.0.0.0/8,DIRECT,no-resolve
+IP-CIDR,172.16.0.0/12,DIRECT,no-resolve
+IP-CIDR,192.168.0.0/16,DIRECT,no-resolve
+IP-CIDR6,::1/128,DIRECT,no-resolve
+IP-CIDR6,fc00::/7,DIRECT,no-resolve
+DOMAIN-SUFFIX,github.com,PROXY
+DOMAIN-SUFFIX,githubusercontent.com,PROXY
+DOMAIN-SUFFIX,openai.com,PROXY
+DOMAIN-SUFFIX,chatgpt.com,PROXY
+DOMAIN-SUFFIX,google.com,PROXY
+DOMAIN-SUFFIX,youtube.com,PROXY
+DOMAIN-SUFFIX,cn,DIRECT
+RULE-SET,https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/China/China.list,DIRECT
+DOMAIN-SET,https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/China/China_Domain.list,DIRECT
+GEOIP,CN,DIRECT
+FINAL,PROXY
+"""
+
 def main():
     if not NODES.is_file():
         sys.exit('缺少 /root/nodes.txt')
@@ -150,13 +200,46 @@ def main():
             {'name': '自动选择', 'type': 'url-test', 'proxies': names,
              'url': 'https://www.gstatic.com/generate_204', 'interval': 300, 'tolerance': 50},
         ],
-        'rules': ['MATCH,节点选择'],
+        'rule-providers': {
+            'cn-domain': {
+                'type': 'http', 'behavior': 'domain', 'format': 'mrs',
+                'path': './rule_provider/geosite-cn.mrs', 'interval': 86400,
+                'proxy': '节点选择',
+                'url': 'https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/cn.mrs',
+            },
+            'cn-ip': {
+                'type': 'http', 'behavior': 'ipcidr', 'format': 'mrs',
+                'path': './rule_provider/geoip-cn.mrs', 'interval': 86400,
+                'proxy': '节点选择',
+                'url': 'https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geoip/cn.mrs',
+            },
+        },
+        'rules': [
+            'IP-CIDR,127.0.0.0/8,DIRECT,no-resolve',
+            'IP-CIDR,10.0.0.0/8,DIRECT,no-resolve',
+            'IP-CIDR,172.16.0.0/12,DIRECT,no-resolve',
+            'IP-CIDR,192.168.0.0/16,DIRECT,no-resolve',
+            'IP-CIDR6,::1/128,DIRECT,no-resolve',
+            'IP-CIDR6,fc00::/7,DIRECT,no-resolve',
+            'DOMAIN-SUFFIX,github.com,节点选择',
+            'DOMAIN-SUFFIX,githubusercontent.com,节点选择',
+            'DOMAIN-SUFFIX,openai.com,节点选择',
+            'DOMAIN-SUFFIX,chatgpt.com,节点选择',
+            'DOMAIN-SUFFIX,google.com,节点选择',
+            'DOMAIN-SUFFIX,youtube.com,节点选择',
+            'DOMAIN-SUFFIX,cn,DIRECT',
+            'RULE-SET,cn-domain,DIRECT',
+            'RULE-SET,cn-ip,DIRECT,no-resolve',
+            'MATCH,节点选择',
+        ],
     }
     raw = NODES.read_bytes()
     sub = base64.b64encode(raw)
     items = {
         f'{token}.txt': sub,
         f'{token}.shadowrocket.txt': sub,
+        f'{token}.shadowrocket.conf': shadowrocket_rules().encode('utf-8'),
+        f'{token}.v2rayn-routing.json': json.dumps(routing_rules(), ensure_ascii=False, indent=2).encode('utf-8'),
         f'{token}.clash.yaml': yaml.safe_dump(
             config, allow_unicode=True, sort_keys=False, width=120).encode(),
     }
@@ -173,6 +256,8 @@ def main():
         print('v2rayN:        ' + original)
         print('Clash/Mihomo:  ' + prefix + '.clash.yaml')
         print('Shadowrocket:  ' + prefix + '.shadowrocket.txt')
+        print('Shadowrocket 规则配置: ' + prefix + '.shadowrocket.conf')
+        print('v2rayN 路由规则: ' + prefix + '.v2rayn-routing.json')
     else:
         print('订阅文件已生成；原HTTPS链接信息缺失，请核实Caddy域名后组合URL')
 
@@ -251,7 +336,9 @@ current_hash=$(sha256sum "$tmp" | awk '{print $1}')
 if [[ -s "$stamp" && "$(cat "$stamp")" == "$current_hash" ]] \
    && [[ -s "$WEB_DIR/$token.txt" ]] \
    && [[ -s "$WEB_DIR/$token.clash.yaml" ]] \
-   && [[ -s "$WEB_DIR/$token.shadowrocket.txt" ]]; then
+   && [[ -s "$WEB_DIR/$token.shadowrocket.txt" ]] \
+   && [[ -s "$WEB_DIR/$token.shadowrocket.conf" ]] \
+   && [[ -s "$WEB_DIR/$token.v2rayn-routing.json" ]]; then
   echo '检查完成：20 个节点未变化，订阅无需更新'
   exit 0
 fi
