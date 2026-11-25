@@ -191,9 +191,11 @@ def download(name, dest, *, python=False):
 def landing_present():
     return LAND.exists() or UNIT.exists()
 
-def need_base():
+def need_base(require_active=True):
     need(BASE.joinpath('config.json').is_file() and BASE.joinpath('ports.env').is_file()
-         and UP.is_file() and active(SERVICES[0]), '基础20节点未安装或未运行。')
+         and UP.is_file(), '基础20节点未安装。')
+    if require_active:
+        need(active(SERVICES[0]), '基础服务未运行，请使用菜单3重启。')
 
 def need_land():
     need(LAND.joinpath('config.json').is_file() and LAND.joinpath('nodes.txt').is_file()
@@ -261,12 +263,16 @@ def install_sync():
     script = download('auto-sync-install.sh', '/root/sbp-sub-auto-install.sh')
     run(['bash', script], timeout=600)
     
-def sync(force=False):
+def ensure_sync():
     sync_ready()
     worker = Path('/usr/local/sbin/sbp-sub-sync')
     if not worker.is_file() or 'LANDING_DIR=' not in worker.read_text():
         print('安装/升级 20/30 节点同步组件。')
         install_sync()
+
+
+def sync(force=False):
+    ensure_sync()
     if force:
         STAMP.unlink(missing_ok=True)
     system('start', SYNC)
@@ -381,6 +387,16 @@ def change_env_ports(raw, mapping):
          'ports.env 格式不符合已知版本，拒绝修改。')
     return PORT_RE.sub(lambda m: m[1] + '=' + str(mapping[int(m[2])]), raw)
 
+def verify_listeners(ports):
+    listening=set()
+    for row in run(['ss','-H','-lntu'],capture=True).splitlines():
+        fields=row.split()
+        if len(fields)>4:
+            tail=fields[4].rsplit(':',1)[-1]
+            if tail.isdigit():
+                listening.add(int(tail))
+    need(set(ports)<=listening, '存在未监听的新端口，拒绝发布订阅。')
+
 def allow_ports(ports):
     print('新入站端口（TCP/UDP，按实际监听与云安全组设置）：')
     print(', '.join(map(str, sorted(ports))))
@@ -459,6 +475,7 @@ def restore_snapshot(d):
 
 def rotate():
     need_base()
+    ensure_sync()
     has = landing_present()
     if has:
         need_land()
@@ -494,6 +511,7 @@ def rotate():
             restart(SERVICES[0])
             if has:
                 restart(SERVICES[1])
+            verify_listeners(set(bm.values()) | set(lm.values()))
             need({link_info(s)[1] for s in base_links()} == set(bm.values()),
                  '原脚本输出端口未随配置变化。')
             sync(force=True)
@@ -596,7 +614,10 @@ def remote_install(host, sshport, server):
             # Intentional stdin for remote script; no interactive SSH inside a heredoc.
             run(ssh+['bash -s -- '+remote], stdin=REMOTE_SCRIPT, timeout=180)
     finally:
-        run(ssh+['rm -rf -- '+remote], ok=False, quiet=True, timeout=60)
+        try:
+            run(ssh+['rm -rf -- '+remote], ok=False, quiet=True, timeout=60)
+        except Exception:
+            print('请在 B 上清理本次私有临时上传目录：'+remote)
     print('B 端独立服务已安装。若后续 A 端操作失败，B 端服务仍需单独维护。')
 
 def prepare_link():
@@ -636,25 +657,33 @@ def add_landing():
     need_base()
     sync_ready()
     need(not landing_present(), '已有落地服务；请选择菜单8更换，而非重复安装。')
-    snapshot('before-add')
+    ensure_sync()
+    backup=snapshot('before-add')
     server,client,key,expected=prepare_link()
     save_stage(server,client,key)
     p=download('landing-install.py','/root/landing-install.py',python=True)
     with pause_sync():
         run(['python3',p,'--expect-ip',expected],timeout=600)
-        ports={link_info(s)[1] for s in extra_links()}
         try:
+            ports={link_info(s)[1] for s in extra_links()}
             allow_ports(ports)
-        except Failure:
-            print('落地服务已创建，暂未确认入口防火墙。请完成放行后使用菜单12。')
+            verify_listeners(ports)
+            sync(force=True)
+        except BaseException:
+            print('新增落地未完成，移除本次 A 端新增服务并保留 B 端链路配置供重试。')
+            system('disable','--now',SERVICES[1])
+            shutil.move(str(LAND),str(backup/'new-landing'))
+            shutil.move(str(UNIT),str(backup/'new-landing.service'))
+            system('daemon-reload')
+            sync(force=True)
             raise
-        sync(force=True)
 
 def switch_landing():
     need_base()
     need_land()
     need(active(SERVICES[1]),'落地入站服务未运行。')
     need(confirm('更换 B 的链路配置，保留原10个落地入站端口及凭据？'),'已取消。')
+    ensure_sync()
     save=snapshot('before-switch')
     server,client,key,expected=prepare_link()
     p=LAND/'config.json'
@@ -687,6 +716,7 @@ def delete_landing():
     need_base()
     need_land()
     need(confirm('删除 A 上的10个落地节点并恢复20节点订阅？B 上的服务不会被删除。'),'已取消。')
+    ensure_sync()
     d=snapshot('before-remove')
     archived=d/'removed-live'
     archived.mkdir(mode=0o700)
@@ -725,7 +755,7 @@ def install_base():
     run(['bash',p],timeout=1800)
 
 def restart_all():
-    need_base()
+    need_base(require_active=False)
     check(BASE/'config.json')
     if landing_present():
         need_land()
@@ -796,6 +826,12 @@ def update_manager():
         atomic(entry,q.read_bytes(),0o700)
     print('管理程序已更新；退出后重新运行。订阅组件可通过菜单12升级/同步。')
 
+def sync_menu():
+    if confirm('同时从 GitHub 更新订阅同步组件？（否：只同步现有版本）'):
+        install_sync()
+    sync(force=True)
+
+
 def self_test():
     # Pure, synthetic inputs. No VPS paths, network or systemd access.
     old=[10001,10002]
@@ -833,6 +869,8 @@ def main():
     if sys.argv[1:]==['--version']:
         print(VERSION)
         return
+    if sys.argv[1:]:
+        raise Failure('仅支持 --version、--self-test 或直接启动菜单。')
     need(os.geteuid()==0,'请使用 root 运行。')
     os.umask(0o077)
     lock=open('/run/sbp-manager.lock','a')
@@ -852,7 +890,7 @@ def main():
         '9':('删除落地 VPS 扩展（本机）',delete_landing),
         '10':('测试 Direct/WARP/Landing 三组实际出口',test_exits),
         '11':('查看全部订阅及规则链接',show_urls),
-        '12':('立即同步订阅（必要时升级同步组件）',lambda:sync(force=True)),
+        '12':('立即同步订阅 / 升级同步组件',sync_menu),
         '13':('检查服务状态及同步日志',lambda:(status(),run(['journalctl','-u',SYNC,'-n','20','--no-pager'],ok=False))),
         '14':('更新管理脚本',update_manager),
         '15':('备份本机配置及订阅密钥',lambda:snapshot('manual')),
