@@ -1,19 +1,20 @@
-# Sing-Box-Plus 一键部署与三格式订阅（中文）
+# Sing-Box-Plus 20/30 节点一键部署与三格式订阅（中文）
 
 [English README](./README.md) | [项目主页](./)
 
-> 本项目为独立部署辅助脚本，并非 [Sing-Box-Plus](https://github.com/Alvin9999-newpac/Sing-Box-Plus) 官方项目。用于在 **Debian 13** VPS 上部署 20 个节点，并生成 v2rayN、Clash/Mihomo、Shadowrocket 三种 HTTPS 订阅。上游脚本可能变化，首次使用请先审阅脚本；尚未在所有 VPS 环境中进行端到端验证。
+> 本项目为独立部署辅助脚本，并非 [Sing-Box-Plus](https://github.com/Alvin9999-newpac/Sing-Box-Plus) 官方项目。用于在 **Debian 13** VPS 上部署基础 20 个节点（双 VPS 扩展后 30 个），并生成 v2rayN、Clash/Mihomo、Shadowrocket 三种 HTTPS 订阅。上游脚本可能变化，首次使用请先审阅脚本；尚未在所有 VPS 环境中进行端到端验证。
 
 ## 1. 项目功能
 
 | 功能 | 说明 |
 | --- | --- |
 | 新机部署 | 安装依赖、第三方 Sing-Box-Plus、Caddy、systemd 订阅同步任务 |
-| 20 个节点 | 10 个直连 + 10 个 WARP 出口节点，具体以原脚本实际生成结果为准 |
+| 基础 20 个节点 | 10 个直连 + 10 个 WARP 出口节点，具体以原脚本实际生成结果为准 |
+| 可选双 VPS 扩展 | 独立新增 10 个住宅落地节点，原有节点保留，合计 30 个；见第 12、13 节 |
 | v2rayN | Base64 订阅，`.txt` |
 | Clash Verge Rev / Mihomo | YAML 配置，`.clash.yaml` |
 | Shadowrocket | Base64 订阅，`.shadowrocket.txt` |
-| 自动更新 | 监听端口文件，外加每分钟定时核对并重建三份订阅 |
+| 自动更新 | 监听基础端口及可选落地配置/节点文件，每分钟定时核对，支持 20/30 节点 |
 | 固定地址 | **同一台 VPS** 更换节点端口时，原来的订阅 URL/Token 保持不变 |
 
 请注意：三种订阅格式指向同一组节点，并不意味着所有协议都兼容所有客户端。Clash 配置针对 Mihomo 内核，旧版 Clash 可能不支持 Reality、Hysteria2、TUIC、AnyTLS 等。
@@ -86,7 +87,7 @@ https://sub.example.com/随机密钥.shadowrocket.txt
 
 界面名称会随客户端版本变化。**Base64 不是加密**；任何拿到订阅 URL 的人都可能取得节点认证信息，订阅地址应视为敏感凭据。
 
-## 5. 更换全部端口后自动同步
+## 5. 更换基础 20 个端口后自动同步
 
 像以前一样进入节点管理菜单：
 
@@ -94,11 +95,11 @@ https://sub.example.com/随机密钥.shadowrocket.txt
 bash /root/sing-box-plus.sh
 ```
 
-选择 `4) 一键更换所有端口`。系统会：
+选择 `4) 一键更换所有端口`（上游菜单，仅更换基础 20 个端口；新增落地端口不变）。系统会：
 
 1. 修改 `/opt/sing-box/ports.env` 并更新 Sing-Box 服务；
 2. 使用 `sbp-sub-sync.path` 检测变化，由 `sbp-sub-sync.timer` 每分钟兜底；
-3. 校验生成的 20 条节点与服务端端口一致后，更新三份订阅文件；
+3. 校验基础 20 条节点，并在启用落地扩展时校验新增 10 条节点，更新三份订阅文件；
 4. **保持订阅域名和 Token 不变**。
 
 然后在 v2rayN、Clash Verge Rev 或 Shadowrocket 中执行**更新订阅**。这不是服务端主动推送节点给客户端；客户端仍需更新才能获取新端口。
@@ -147,7 +148,7 @@ bash /root/sbp-sub-auto-install.sh
 
 ### 单独使用转换器
 
-如果已经有 `/root/nodes.txt`（20 条节点）、`/root/sub-token.txt` 和 `/srv/sbp-sub/`，可只转换出三种文件：
+如果已经有 `/root/nodes.txt`（20 或 30 条节点）、`/root/sub-token.txt` 和 `/srv/sbp-sub/`，可只转换出三种文件：
 
 ```bash
 apt-get install -y python3 python3-yaml
@@ -188,7 +189,7 @@ print(len(data['proxies']))
 PY
 ```
 
-两处预期均为 **20**。此检查只能证明订阅文件可访问并包含 20 条节点，**不能代替客户端实际连接、协议兼容性、节点延迟及 WARP 出口测试**。
+两处预期均为 **20（基础部署）或 30（双 VPS 扩展）**。此检查只能证明订阅文件可访问并包含预期节点数，**不能代替客户端实际连接、协议兼容性、节点延迟及 WARP 出口测试**。
 
 ## 8. 故障排查
 
@@ -207,13 +208,14 @@ PY
 
 | 文件/路径 | 作用 |
 | --- | --- |
-| [`install.sh`](./install.sh) | 新 Debian 13 VPS 部署入口 |
+| [`install.sh`](./install.sh) | 新 Debian 13 VPS 基础部署入口 |
+| [`landing-install.py`](./landing-install.py) | A→B 链路验证后首次新增 10 个落地入站 |
 | [`auto-sync-install.sh`](./auto-sync-install.sh) | 安装转换器与 systemd 监控 |
 | [`sbp_multi_sub.py`](./sbp_multi_sub.py) | 可独立运行的三格式转换器 |
 | `/root/sing-box-plus.sh` | 第三方 Sing-Box-Plus 管理脚本 |
 | `/opt/sing-box/ports.env` | 当前 20 个节点端口 |
 | `/opt/sing-box/config.json` | Sing-Box 服务配置 |
-| `/root/nodes.txt` | 20 条原始节点链接（敏感） |
+| `/root/nodes.txt` | 20/30 条聚合节点链接（敏感） |
 | `/root/sub-token.txt` | 随机订阅密钥（敏感） |
 | `/root/subscription-url.txt` | 默认 HTTPS 订阅 URL（敏感） |
 | `/srv/sbp-sub/` | Caddy 发布订阅的目录 |
@@ -268,3 +270,323 @@ PY
 **更新当前 VPS 的安装：** 从仓库重新下载并执行 `auto-sync-install.sh`，然后运行 `systemctl start sbp-sub-sync.service`；新 VPS 的 `install.sh` 会拉取最新版同步脚本。此操作保留原 Token 和原三个节点订阅地址，新增两份配套规则文件。
 
 **使用限制：** 国内规则并不能保证所有网站的最终链路或 DNS 都完全按预期；需要客户端工作在支持规则的模式下。Mihomo 的远程规则从 GitHub Raw 下载，可能需要代理连接。v2rayN 自定义规则需手动导入，不能通过普通 Base64 节点订阅自动更新；Shadowrocket 配置也需要单独导入。规则源与内核协议可能变化，更新后请在实际客户端验证。
+
+## 12. 双 VPS 部署：保留原 20 节点，新增 10 个住宅落地节点
+
+### 12.1 拓扑、环境及端口
+
+```text
+客户端 → VPS A（中转 / HTTPS 订阅）
+          ├─ 10 个基础直连节点 → A 的公网出口
+          ├─ 10 个 WARP 节点 → Cloudflare WARP 出口
+          └─ 10 个 -landing 节点 → SS2022 加密链路 → VPS B（住宅落地）→ B 的公网出口
+```
+
+| 项目 | VPS A：中转 | VPS B：落地 |
+| --- | --- | --- |
+| 系统 | Debian 13，已部署基础 20 节点及订阅 | 兼容的 Linux + systemd；Debian 11 x86_64 曾验证可运行 Sing-Box 1.13.7，但已结束常规 LTS，建议支持中的系统 |
+| 服务 | `sing-box.service`、`sing-box-landing.service`、Caddy、同步组件 | `sing-box-landing-exit.service` |
+| 入口端口 | 基础节点现有端口、HTTPS 80/443；新增 10 个端口从 55000–55099 选取 | TCP/UDP 24443（仅允许 A 的实际公网来源 IP 访问） |
+| 凭据 | 原 20 节点不变；落地节点独立生成认证 UUID/密码；另有 A→B 密钥 | A→B 共享 SS2022 密钥 |
+| 订阅 | 所有节点分享链接指向 A；原 URL/Token 不变 | 无需 Caddy 或订阅站点 |
+
+先在 A 完成第 3 节部署。B 必须具有 root 权限、同 A 兼容的 CPU/运行环境，并允许 A 连接。B 的公网 SSH 地址与实际互联网出口地址可能不同。下文 `203.0.113.20` 为保留的文档示例 IP，**必须替换**，不是可以连接的服务器。先确认 SSH 主机指纹再登录；不需要把 root 密码写进命令。
+
+### 12.2 A：检查连通性
+
+```bash
+# Replace this documentation-only address before executing.
+LAND_HOST=203.0.113.20
+LAND_SSH_PORT=22
+ping -c 4 "$LAND_HOST"
+ssh -p "$LAND_SSH_PORT" root@"$LAND_HOST"
+# Exit the landing VPS to return to the relay VPS:
+exit
+```
+
+### 12.3 A：生成独立 SS2022 链路并上传
+
+仍在 A 上执行以下命令；不要在 B 上运行生成脚本。假定 A 已安装 Python 3、Sing-Box 和 SSH 客户端。重复执行会保留原有 `key.txt`，但会重新写入阶段配置；若已有正在运行的落地服务，不应未经检查重跑整个部署。
+
+```bash
+umask 077
+install -d -m 700 /root/sbp-landing
+
+python3 - "$LAND_HOST" <<'PY'
+import base64, ipaddress, json, secrets, sys
+from pathlib import Path
+
+host = str(ipaddress.IPv4Address(sys.argv[1]))
+assert ipaddress.ip_address(host).is_global, "Set the real landing IPv4 first"
+d = Path('/root/sbp-landing')
+keyfile = d / 'key.txt'
+if not keyfile.exists():
+    keyfile.write_text(base64.b64encode(secrets.token_bytes(32)).decode())
+key = keyfile.read_text().strip()
+assert len(base64.b64decode(key, validate=True)) == 32
+method = '2022-blake3-aes-256-gcm'
+server = {
+    'log': {'level': 'warn'},
+    'inbounds': [{'type': 'shadowsocks', 'tag': 'landing-in',
+                  'listen': '0.0.0.0', 'listen_port': 24443,
+                  'method': method, 'password': key}],
+    'outbounds': [{'type': 'direct', 'tag': 'direct'}],
+    'route': {'final': 'direct'},
+}
+client = {
+    'log': {'level': 'warn'},
+    'inbounds': [{'type': 'socks', 'tag': 'test-in',
+                  'listen': '127.0.0.1', 'listen_port': 19080}],
+    'outbounds': [{'type': 'shadowsocks', 'tag': 'landing',
+                   'server': host, 'server_port': 24443,
+                   'method': method, 'password': key}],
+    'route': {'final': 'landing'},
+}
+for path, data in [(d/'server.json', server), (d/'test-client.json', client)]:
+    path.write_text(json.dumps(data, indent=2) + '\n')
+    path.chmod(0o600)
+keyfile.chmod(0o600)
+print('Landing configuration generated.')
+PY
+
+# These are separate commands, not an SSH command inside a Bash heredoc.
+ssh -n -p "$LAND_SSH_PORT" root@"$LAND_HOST" \
+  'install -d -m 700 /root/sbp-landing-stage'
+scp -P "$LAND_SSH_PORT" "$(command -v sing-box)" \
+  root@"$LAND_HOST":/root/sbp-landing-stage/sing-box
+scp -P "$LAND_SSH_PORT" /root/sbp-landing/server.json \
+  root@"$LAND_HOST":/root/sbp-landing-stage/server.json
+
+ssh -p "$LAND_SSH_PORT" root@"$LAND_HOST"
+```
+
+### 12.4 B：部署独立落地出口
+
+现在终端应在 B。先确认文件已上传，查看 A 的实际 SSH 来源地址：
+
+```bash
+echo "$SSH_CONNECTION" | awk '{print $1}'
+ls -lh /root/sbp-landing-stage/
+```
+
+在 B 的云防火墙/本机防火墙中，仅允许该来源 IPv4 访问 TCP/UDP 24443；保留 SSH 管理权限，不要直接清空防火墙规则。以下为**首次安装**，不会依赖 B 的旧 APT 软件源；复制的 Sing-Box 二进制必须兼容 B。若版本检查失败，应更换适配 B 的官方二进制，勿继续。
+
+```bash
+bash <<'BASH'
+set -euo pipefail
+test ! -e /etc/systemd/system/sing-box-landing-exit.service || {
+    echo "Landing service already exists; inspect it instead of overwriting."
+    exit 1
+}
+install -d -m 700 /opt/sing-box-landing-exit
+install -m 755 /root/sbp-landing-stage/sing-box \
+  /usr/local/bin/sing-box-landing-exit
+install -m 600 /root/sbp-landing-stage/server.json \
+  /opt/sing-box-landing-exit/config.json
+
+/usr/local/bin/sing-box-landing-exit version
+/usr/local/bin/sing-box-landing-exit check \
+  -c /opt/sing-box-landing-exit/config.json
+
+cat > /etc/systemd/system/sing-box-landing-exit.service <<'EOF'
+[Unit]
+Description=Sing-Box Landing Exit
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/sing-box-landing-exit
+ExecStart=/usr/local/bin/sing-box-landing-exit run -c /opt/sing-box-landing-exit/config.json
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now sing-box-landing-exit.service
+systemctl is-active sing-box-landing-exit.service
+ss -lntup | grep 24443
+BASH
+
+# Return to relay VPS A.
+exit
+```
+
+预期 `active`，且 TCP 24443 为 LISTEN、UDP 24443 为 UNCONN。UDP 监听成功不等于 UDP 转发已通过测试。
+
+### 12.5 A：实测落地出口
+
+```bash
+bash <<'BASH'
+set -euo pipefail
+if [ -n "$(ss -H -lnt 'sport = :19080')" ]; then
+    echo "Local test port 19080 is occupied."
+    exit 1
+fi
+echo 'Relay direct IPv4:'
+curl -4fsS --noproxy '*' --max-time 15 https://api.ipify.org
+echo
+sing-box check -c /root/sbp-landing/test-client.json
+sing-box run -c /root/sbp-landing/test-client.json \
+  > /root/sbp-landing/test.log 2>&1 &
+pid=$!
+trap 'kill "$pid" 2>/dev/null || true' EXIT
+sleep 2
+kill -0 "$pid"
+echo 'Landing exit IPv4:'
+curl -4fsS --noproxy '' --max-time 20 \
+  --proxy socks5h://127.0.0.1:19080 https://api.ipify.org
+echo
+BASH
+```
+
+第二个 IPv4 应为 B 的实际公网出口；记下它，下一步使用实测值，而不是盲目使用 SSH IP。若测试失败，检查 B 的 TCP/UDP 24443 防火墙、`journalctl -u sing-box-landing-exit.service -n 30 --no-pager`，以及 A 的 `/root/sbp-landing/test.log`（不要公开可能包含敏感信息的日志）。
+
+### 12.6 A：安装 10 个落地节点
+
+[landing-install.py](./landing-install.py) 读取 A 的基础直连入站及分享链接，克隆 10 种协议并生成独立认证凭据，选择 10 个空闲端口、建立独立服务。它保留原有 20 个节点，并通过新 SS2022 入站进行 TCP 出口 IP 实测；失败时回滚本次新增服务。该脚本**不是 B 的安装器**，也不是更新/重装工具；已有落地目录或服务单元时会拒绝覆盖。
+
+```bash
+cd /root
+BASE=https://raw.githubusercontent.com/JLX2332326532/personal-note/main/vps-sing-box-subscriptions
+curl -fL "$BASE/landing-install.py" -o /root/landing-install.py
+# Replace with the actual IPv4 observed in the previous proxy test.
+python3 /root/landing-install.py --expect-ip 203.0.113.20
+
+systemctl is-active sing-box.service sing-box-landing.service
+wc -l /opt/sing-box-landing/nodes.txt
+```
+
+预期两个服务均为 `active`，落地节点文件为 10 行。按脚本输出放行 A 的实际新增端口和监听协议；仅在确实分配 55000–55009 时才使用该范围。服务商安全组也需设置。不要将 B 的 SS2022 密钥或节点链接复制到公开仓库。原管理脚本更换端口时只修改基础 20 节点。
+
+### 12.7 A：升级并验证三种订阅
+
+```bash
+BASE=https://raw.githubusercontent.com/JLX2332326532/personal-note/main/vps-sing-box-subscriptions
+curl -fL "$BASE/auto-sync-install.sh" -o /root/sbp-sub-auto-install.sh
+bash /root/sbp-sub-auto-install.sh
+
+systemctl is-active sbp-sub-sync.path sbp-sub-sync.timer
+journalctl -u sbp-sub-sync.service -n 30 --no-pager
+```
+
+新版同步程序会自动识别 20/30 节点，不重新生成订阅 URL 或 Token；同时监控基础端口、落地配置和落地节点文件，并在每分钟定时检查时校验。落地配置不完整、服务停止或端口冲突时拒绝发布，保留旧订阅，修复后再同步。
+
+```bash
+python3 - <<'PY'
+from pathlib import Path
+from urllib.request import urlopen
+import base64, yaml
+
+url = Path('/root/subscription-url.txt').read_text().strip()
+assert url.endswith('.txt')
+for label, ext in [('v2rayN', '.txt'), ('Mihomo', '.clash.yaml'),
+                   ('Shadowrocket', '.shadowrocket.txt')]:
+    with urlopen(url[:-4] + ext, timeout=20) as r:
+        raw = r.read()
+    if label == 'Mihomo':
+        data = yaml.safe_load(raw)
+        names = [p['name'] for p in data['proxies']]
+        assert sum(n.endswith('-landing') for n in names) == 10
+        assert sum(n.endswith('-warp') for n in names) == 10
+        count = len(names)
+    else:
+        count = len(base64.b64decode(raw, validate=True).decode().splitlines())
+    print(label, count)
+    assert count == 30
+PY
+```
+
+三个结果均应为 30。在客户端重新更新原订阅即可。Mihomo 新增「直连节点」「WARP节点」「住宅落地」三个手动策略组：住宅组只有落地节点，不会自动切换至 A/WARP；原「自动选择」仍仅包含基础 20 节点。国内直连规则仍优先生效，只有进入代理策略的流量才会使用所选落地出口。v2rayN 和 Shadowrocket 继续使用第 11 节独立路由配置。
+
+已验证过 A→B 的 TCP 出口及新增 SS2022 入站的实际出口；其他协议、UDP 实际转发、全新环境的一键部署和客户端兼容性仍需逐项验证。
+
+## 13. 管理脚本与服务操作（双 VPS）
+
+### 13.1 原管理菜单的作用范围
+
+在 A 执行 `bash /root/sing-box-plus.sh`。下列为原 Sing-Box-Plus v4.8.0 菜单，**未修改上游菜单**：
+
+| 选项 | 操作及限制 |
+| --- | --- |
+| 1 | 安装/部署基础 20 节点；不负责 B 或新增落地服务 |
+| 2 | 查看基础 20 个 IPv4 节点；不显示新增 10 个落地节点 |
+| 6 | 查看基础 IPv6 节点；本项目合并订阅目前按 IPv4 处理 |
+| 3 | 重启基础服务；落地服务需独立重启 |
+| 4 | 仅更换基础 20 个端口；新增 10 个落地端口保持不变，订阅自动同步 |
+| 5 | 开启 BBR（当前机器） |
+| 8 | 上游基础服务卸载；**不是**整个双 VPS 项目的卸载程序，可能使落地依赖和订阅失效 |
+| 0 | 退出 |
+
+没有新增菜单 7/8/9 等落地管理项，也没有实现落地端口一键轮换、自动切换 B 或整套双机卸载；不要将这些操作误认为已实现。
+
+### 13.2 常用管理命令
+
+| 脚本 / 服务 | 执行位置 | 功能 |
+| --- | --- | --- |
+| `install.sh` | A | Debian 13 基础节点、Caddy、订阅同步部署；不负责 B |
+| `landing-install.py --expect-ip <实测出口IP>` | A | 首次新增 10 个落地节点，拒绝覆盖已有安装 |
+| `auto-sync-install.sh` | A | 安装/升级 20/30 节点订阅转换器、监控和定时器 |
+| `sbp_multi_sub.py` | A | 独立转换已提取的 20/30 条节点；不检查运行状态，不替代自动同步 |
+| `/usr/local/sbin/sbp-sub-sync` | A | 自动同步执行器；推荐通过 systemd 手动触发 |
+| `sing-box.service` | A | 基础 20 节点 |
+| `sing-box-landing.service` | A | 新增 10 个落地入站 |
+| `sing-box-landing-exit.service` | B | SS2022 落地出口 |
+
+在 A：
+```bash
+systemctl status sing-box sing-box-landing caddy --no-pager
+systemctl status sbp-sub-sync.path sbp-sub-sync.timer --no-pager
+journalctl -u sing-box-landing.service -n 30 --no-pager
+journalctl -u sbp-sub-sync.service -n 30 --no-pager
+
+# 仅重启新增落地服务，先校验配置
+sing-box check -c /opt/sing-box-landing/config.json &&
+  systemctl restart sing-box-landing.service
+
+# 手动同步，不更换订阅地址
+systemctl start sbp-sub-sync.service
+```
+
+在 B：
+```bash
+systemctl status sing-box-landing-exit.service --no-pager
+journalctl -u sing-box-landing-exit.service -n 30 --no-pager
+/usr/local/bin/sing-box-landing-exit check -c /opt/sing-box-landing-exit/config.json &&
+  systemctl restart sing-box-landing-exit.service
+ss -lntup | grep 24443
+```
+
+更换 B 或链路密钥需要同时更新 B 入站及 A 的落地出站，并更新 A 的 `/root/sbp-landing/test-client.json`；更改前备份私有配置、校验并测试新出口，不能只改客户端订阅。若更换新增落地入站端口，需同步更新 `/opt/sing-box-landing/config.json` 与 `nodes.txt`（VMess 端口位于 Base64 JSON 内），检查防火墙并重启落地服务，再运行同步。当前没有自动完成这些变更的脚本。
+
+### 13.3 新增文件路径及故障排查
+
+| 机器 | 路径 | 说明 |
+| --- | --- | --- |
+| A | `/root/sbp-landing/key.txt` | 独立链路密钥（敏感） |
+| A | `/root/sbp-landing/server.json` | B 的入站阶段配置（敏感） |
+| A | `/root/sbp-landing/test-client.json` | 测试链路配置（敏感） |
+| A | `/opt/sing-box-landing/config.json` | 10 个落地入站和落地出站（敏感） |
+| A | `/opt/sing-box-landing/nodes.txt` | 新增 10 条分享链接（敏感） |
+| A | `/etc/systemd/system/sing-box-landing.service` | 落地入站服务单元 |
+| B | `/root/sbp-landing-stage/` | SCP 上传的二进制及阶段配置（配置敏感） |
+| B | `/opt/sing-box-landing-exit/config.json` | SS2022 服务端入站配置（敏感） |
+| B | `/usr/local/bin/sing-box-landing-exit` | 独立 Sing-Box 二进制 |
+| B | `/etc/systemd/system/sing-box-landing-exit.service` | 落地出口服务单元 |
+
+| 现象 | 排查方向 |
+| --- | --- |
+| SSH 报空主机名 | 将 IP 正确赋值给 LAND_HOST；read 的提示文字不是变量值 |
+| SCP 文件缺失 | 回到 A，分别执行 ssh -n 和 scp；不要在 Bash heredoc 中混用会读取标准输入的 SSH 命令 |
+| AddressValueError | 检查 --expect-ip 是否为合法 IPv4，删除粘贴时额外的 ~ 等字符 |
+| B 服务已运行但链路失败 | 检查 A→B 的 24443 TCP/UDP、防火墙、SS2022 密钥与加密方式 |
+| A 落地服务正常但客户端连不上 | 检查新增入站监听和 A 的云/本机防火墙，更新订阅并测试对应协议 |
+| 订阅仍为 20 条 | 检查是否安装最新版同步脚本、A 的落地服务状态和 10 条节点文件；查看同步日志 |
+| 订阅校验拒绝发布 | 核查两组节点名称、地址、端口与各自配置的一致性；不要强行删除校验 |
+| 选择落地后 IP 仍是 A/WARP | 在 Mihomo 中选择住宅落地组和具体节点，确认流量命中代理规则；检查是否使用原自动选择组 |
+
+所有示例均不包含真实服务器地址、认证密钥或订阅 Token。生产凭据留在各自 VPS，不提交 GitHub。
