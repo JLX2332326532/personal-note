@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sing-Box-Plus v4.8.0: auto-refresh three existing subscription URLs.
+# Sing-Box-Plus v4.8.0: refresh three subscriptions for 20 or 30 nodes.
 # Does NOT change Sing-Box-Plus, ports, Caddy config, URL, or token.
 set -Eeuo pipefail
 
@@ -183,12 +183,22 @@ def main():
     if len(token) < 32 or not all(ch in '0123456789abcdef' for ch in token):
         sys.exit('订阅Token不符合预期；为安全起见终止')
     links = [l.strip() for l in NODES.read_text().splitlines() if l.strip()]
-    if len(links) != 20:
-        sys.exit('节点数量不是20，实际为：' + str(len(links)))
+    if len(links) not in (20, 30):
+        sys.exit('节点数量应为20或30，实际为：' + str(len(links)))
     proxies = [convert(u) for u in links]
     names = [p['name'] for p in proxies]
     if len(set(names)) != len(names):
         sys.exit('节点名重复，无法生成Clash配置')
+    direct = [n for n in names if not n.endswith(('-warp', '-landing'))]
+    warp = [n for n in names if n.endswith('-warp')]
+    landing = [n for n in names if n.endswith('-landing')]
+    if len(direct) != 10 or len(warp) != 10 or len(landing) != len(links) - 20:
+        sys.exit('节点分组数量不符合10直连+10 WARP+可选10落地')
+    if len({(p['server'], p['port']) for p in proxies}) != len(proxies):
+        sys.exit('节点地址及端口重复')
+    groups = ['直连节点', 'WARP节点']
+    if landing:
+        groups.append('住宅落地')
     config = {
         'mixed-port': 7890,
         'allow-lan': False,
@@ -196,9 +206,15 @@ def main():
         'log-level': 'warning',
         'proxies': proxies,
         'proxy-groups': [
-            {'name': '节点选择', 'type': 'select', 'proxies': ['自动选择', 'DIRECT'] + names},
-            {'name': '自动选择', 'type': 'url-test', 'proxies': names,
+            {'name': '节点选择', 'type': 'select',
+             'proxies': ['自动选择', 'DIRECT'] + groups + names},
+            # Keep the existing automatic group limited to the original 20 nodes.
+            # Landing is a separate manual selector: no fallback to a different exit.
+            {'name': '自动选择', 'type': 'url-test', 'proxies': direct + warp,
              'url': 'https://www.gstatic.com/generate_204', 'interval': 300, 'tolerance': 50},
+            {'name': '直连节点', 'type': 'select', 'proxies': direct},
+            {'name': 'WARP节点', 'type': 'select', 'proxies': warp},
+            *([{'name': '住宅落地', 'type': 'select', 'proxies': landing}] if landing else []),
         ],
         'rule-providers': {
             'cn-domain': {
@@ -248,7 +264,7 @@ def main():
         temp.write_bytes(data)
         os.chmod(temp, 0o644)
         os.replace(temp, WEB / name)
-    print('成功：20个节点，生成三种订阅文件')
+    print(f'成功：{len(links)}个节点，生成三种订阅文件')
     urlfile = Path('/root/subscription-url.txt')
     if urlfile.is_file() and urlfile.read_text().strip().endswith(f'/{token}.txt'):
         original = urlfile.read_text().strip()
@@ -279,6 +295,17 @@ CONFIG=/opt/sing-box/config.json
 TOKEN_FILE=/root/sub-token.txt
 WEB_DIR=/srv/sbp-sub
 CONVERTER_DIR=/usr/local/lib/sbp-sub-sync
+LANDING_DIR=/opt/sing-box-landing
+
+# A partly configured or stopped landing service is not silently removed.
+if [[ -e "$LANDING_DIR/config.json" || -e "$LANDING_DIR/nodes.txt" || -e /etc/systemd/system/sing-box-landing.service ]]; then
+  test -s "$LANDING_DIR/config.json" && test -s "$LANDING_DIR/nodes.txt" || {
+    echo '落地节点文件不完整；保留旧订阅' >&2; exit 1;
+  }
+  systemctl is-active --quiet sing-box-landing.service || {
+    echo '落地服务未运行；保留旧订阅' >&2; exit 1;
+  }
+fi
 
 for f in "$SOURCE" "$PORTS" "$CONFIG" "$TOKEN_FILE"; do
   test -s "$f" || { echo "缺少文件 $f" >&2; exit 1; }
@@ -314,7 +341,7 @@ if ! (printf '2\n' | SBP_SKIP_DEPS=1 bash <(
 fi
 
 # Parse all 20 links and verify their ports match the generated config.
-python3 - "$tmp" "$CONVERTER_DIR" "$CONFIG" <<'PY_VALIDATE'
+python3 - "$tmp" "$CONVERTER_DIR" "$CONFIG" "$LANDING_DIR" <<'PY_VALIDATE'
 import json, ipaddress, sys
 from pathlib import Path
 sys.path.insert(0, sys.argv[2])
@@ -328,18 +355,44 @@ servers = {p['server'] for p in proxies}
 assert len(servers) == 1 and ipaddress.ip_address(next(iter(servers))).is_global, '节点地址不是一致的公网 IP'
 config = json.loads(Path(sys.argv[3]).read_text())
 assert {p['port'] for p in proxies} == {p['listen_port'] for p in config['inbounds']}, '节点端口与 Sing-Box 配置不一致'
+assert sum(p['name'].endswith('-warp') for p in proxies) == 10, '基础WARP节点数量错误'
+assert not any(p['name'].endswith('-landing') for p in proxies), '基础节点名称不应包含落地后缀'
+
+landing = Path(sys.argv[4])
+extra_file, extra_config = landing / 'nodes.txt', landing / 'config.json'
+if extra_file.exists() or extra_config.exists():
+    assert extra_file.is_file() and extra_config.is_file(), '落地节点文件不完整'
+    extra = [s.strip() for s in extra_file.read_text().splitlines() if s.strip()]
+    assert len(extra) == 10, '落地节点数量不是10'
+    ep = [convert(link) for link in extra]
+    ec = json.loads(extra_config.read_text())
+    assert len(ec['inbounds']) == 10, '落地入站数量不是10'
+    assert all(p['name'].endswith('-landing') for p in ep), '落地节点命名错误'
+    assert {p['server'] for p in ep} == servers, '落地节点必须指向中转机'
+    assert len({p['port'] for p in ep}) == 10, '落地端口重复'
+    assert {p['port'] for p in ep} == {i['listen_port'] for i in ec['inbounds']}, '落地端口与配置不一致'
+    assert len({p['name'] for p in proxies + ep}) == 30, '合并节点名称重复'
+    assert len({p['port'] for p in proxies + ep}) == 30, '基础节点与落地节点端口冲突'
+    assert ec.get('route', {}).get('final') == 'landing', '落地服务未使用独立落地出口'
+    assert len(ec.get('outbounds', [])) == 1 and ec['outbounds'][0].get('tag') == 'landing', '落地出站配置不一致'
+    Path(sys.argv[1]).write_text('\n'.join(links + extra) + '\n')
+    print('校验通过：20个基础节点 + 10个落地节点')
+else:
+    print('校验通过：20个基础节点（未启用落地扩展）')
 PY_VALIDATE
 
 token=$(<"$TOKEN_FILE")
 stamp=/root/.sbp-sub.last.sha256
-current_hash=$(sha256sum "$tmp" | awk '{print $1}')
+# Include converter content so rule/group upgrades also trigger a refresh.
+current_hash=$(cat "$tmp" "$CONVERTER_DIR/converter.py" | sha256sum | awk '{print $1}')
+node_count=$(wc -l < "$tmp")
 if [[ -s "$stamp" && "$(cat "$stamp")" == "$current_hash" ]] \
    && [[ -s "$WEB_DIR/$token.txt" ]] \
    && [[ -s "$WEB_DIR/$token.clash.yaml" ]] \
    && [[ -s "$WEB_DIR/$token.shadowrocket.txt" ]] \
    && [[ -s "$WEB_DIR/$token.shadowrocket.conf" ]] \
    && [[ -s "$WEB_DIR/$token.v2rayn-routing.json" ]]; then
-  echo '检查完成：20 个节点未变化，订阅无需更新'
+  echo "检查完成：$node_count 个节点未变化，订阅无需更新"
   exit 0
 fi
 
@@ -349,7 +402,7 @@ python3 "$CONVERTER_DIR/converter.py" >/dev/null
 printf '%s\n' "$current_hash" > "${stamp}.tmp"
 mv -f "${stamp}.tmp" "$stamp"
 # A successful converter invocation atomically replaces each published file.
-echo '成功：三种订阅已经更新（20 节点，URL/Token 保持不变）'
+echo "成功：三种订阅已经更新（$node_count 节点，URL/Token 保持不变）"
 SYNC_SCRIPT
 chmod 700 /usr/local/sbin/sbp-sub-sync
 
@@ -371,6 +424,8 @@ Description=Watch Sing-Box-Plus port changes
 
 [Path]
 PathChanged=/opt/sing-box/ports.env
+PathChanged=/opt/sing-box-landing/nodes.txt
+PathChanged=/opt/sing-box-landing/config.json
 Unit=sbp-sub-sync.service
 
 [Install]
@@ -394,7 +449,8 @@ TIMER_UNIT
 systemctl daemon-reload
 # Run once before enabling the watcher/timer, to avoid a first-run race.
 if systemctl start sbp-sub-sync.service; then
-  systemctl enable --now sbp-sub-sync.path sbp-sub-sync.timer
+  systemctl enable sbp-sub-sync.path sbp-sub-sync.timer
+  systemctl restart sbp-sub-sync.path sbp-sub-sync.timer
   echo '已安装并启用自动同步。'
   echo '订阅地址不变；查看三条地址：'
   python3 - <<'PY_URLS'
