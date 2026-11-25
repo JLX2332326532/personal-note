@@ -427,6 +427,12 @@ def remove_item(p):
         p.unlink(missing_ok=True)
 
 def snapshot(label):
+    # Keep published subscription files stable while taking a local backup.
+    with pause_sync():
+        return snapshot_files(label)
+
+
+def snapshot_files(label):
     BACKUPS.mkdir(mode=0o700, exist_ok=True)
     os.chmod(BACKUPS, 0o700)
     d = Path(tempfile.mkdtemp(prefix=time.strftime('%Y%m%d-%H%M%S')+'-'+label+'-', dir=BACKUPS))
@@ -717,6 +723,7 @@ def delete_landing():
     need_land()
     need(confirm('删除 A 上的10个落地节点并恢复20节点订阅？B 上的服务不会被删除。'),'已取消。')
     ensure_sync()
+    old_host=ip4(readj(LAND/'config.json')['outbounds'][0]['server'])
     d=snapshot('before-remove')
     archived=d/'removed-live'
     archived.mkdir(mode=0o700)
@@ -737,9 +744,17 @@ def delete_landing():
             system('enable','--now',SERVICES[1])
             sync(force=True)
             raise
-    print('A 已恢复20节点；如不再使用旧 B，可登录 B 执行：')
-    print('systemctl disable --now sing-box-landing-exit.service')
-    print('备份：'+str(d))
+    print('A 已恢复20节点。备份：'+str(d))
+    if confirm('是否另外通过 SSH 停用旧 B 的独立落地服务？仅适用于该服务专供本机，不删除 B 或其配置。'):
+        sshport=portnum(ask('旧 B 的 SSH 端口','22'))
+        try:
+            run(['ssh','-p',str(sshport),'-o','ConnectTimeout=12','root@'+old_host,
+                 'systemctl disable --now sing-box-landing-exit.service'],timeout=90)
+            print('旧 B 的独立服务已停用，配置保留。')
+        except Exception:
+            print('A 的删除操作已经完成；B 的停用失败，请自行登录 B 检查。')
+    else:
+        print('B 服务未修改；必要时登录 B 执行：systemctl disable --now sing-box-landing-exit.service')
 
 def install_base():
     if BASE.joinpath('config.json').exists():
