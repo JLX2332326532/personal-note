@@ -670,3 +670,7 @@ B 已存在独立服务时，自动部署模式拒绝覆盖；如要复用请选
 备份仅面向 A，包含敏感节点凭据和 Token，放在本机 `/root/sbp-backups/`。**不要上传公开仓库。** 不包括 B 的远程状态、云/本机防火墙规则、Sing-Box/Caddy 软件二进制版本或 Caddy ACME 证书存储。恢复只适用于同一台机器；可能恢复旧订阅 Token、URL 和旧端口，需确认这些端口及 B 仍可用。备份不是可移植的全系统镜像。
 
 管理脚本采用 GitHub main 作为更新源，首次运行和菜单14更新时执行语法检查及离线自检；生产环境的 SSH、端口轮换、恢复、客户端协议兼容性仍需实际测试。建议首次使用时先执行菜单13、10、15，确认状态、出口及备份，再进行菜单4或8等变更。
+
+## Google Play 规则模式下载排查
+
+若 Clash Meta for Android 在全局模式能下载而规则模式一直等待，先更新订阅同步组件（增强管理菜单 12，确认升级），再在手机刷新原订阅并切回规则模式。转换器已将 Google Play API/CDN 域名（包括 googleapis.cn、gvt1.com、gvt2.com、gvt3.com、googleusercontent.com、gstatic.com、ggpht.com 等）置于大陆直连规则之前。原节点、Token 和 URL 不变。v2rayN、Shadowrocket 需重新导入对应独立路由配置。若仍失败，检查客户端连接日志中实际命中规则、所选节点、Android VPN 分应用设置及 DNS 解析；本修复未调整 DNS，也未实测手机下载。
