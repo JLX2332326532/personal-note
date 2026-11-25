@@ -155,12 +155,22 @@ def main():
     if len(token) < 32 or not all(ch in '0123456789abcdef' for ch in token):
         sys.exit('订阅Token不符合预期；为安全起见终止')
     links = [l.strip() for l in NODES.read_text().splitlines() if l.strip()]
-    if len(links) != 20:
-        sys.exit('节点数量不是20，实际为：' + str(len(links)))
+    if len(links) not in (20, 30):
+        sys.exit('节点数量应为20或30，实际为：' + str(len(links)))
     proxies = [convert(u) for u in links]
     names = [p['name'] for p in proxies]
     if len(set(names)) != len(names):
         sys.exit('节点名重复，无法生成Clash配置')
+    direct = [n for n in names if not n.endswith(('-warp', '-landing'))]
+    warp = [n for n in names if n.endswith('-warp')]
+    landing = [n for n in names if n.endswith('-landing')]
+    if len(direct) != 10 or len(warp) != 10 or len(landing) != len(links) - 20:
+        sys.exit('节点分组数量不符合10直连+10 WARP+可选10落地')
+    if len({(p['server'], p['port']) for p in proxies}) != len(proxies):
+        sys.exit('节点地址及端口重复')
+    groups = ['直连节点', 'WARP节点']
+    if landing:
+        groups.append('住宅落地')
     config = {
         'mixed-port': 7890,
         'allow-lan': False,
@@ -168,9 +178,15 @@ def main():
         'log-level': 'warning',
         'proxies': proxies,
         'proxy-groups': [
-            {'name': '节点选择', 'type': 'select', 'proxies': ['自动选择', 'DIRECT'] + names},
-            {'name': '自动选择', 'type': 'url-test', 'proxies': names,
+            {'name': '节点选择', 'type': 'select',
+             'proxies': ['自动选择', 'DIRECT'] + groups + names},
+            # Keep the existing automatic group limited to the original 20 nodes.
+            # Landing is a separate manual selector: no fallback to a different exit.
+            {'name': '自动选择', 'type': 'url-test', 'proxies': direct + warp,
              'url': 'https://www.gstatic.com/generate_204', 'interval': 300, 'tolerance': 50},
+            {'name': '直连节点', 'type': 'select', 'proxies': direct},
+            {'name': 'WARP节点', 'type': 'select', 'proxies': warp},
+            *([{'name': '住宅落地', 'type': 'select', 'proxies': landing}] if landing else []),
         ],
         'rule-providers': {
             'cn-domain': {
@@ -220,7 +236,7 @@ def main():
         temp.write_bytes(data)
         os.chmod(temp, 0o644)
         os.replace(temp, WEB / name)
-    print('成功：20个节点，生成三种订阅文件')
+    print(f'成功：{len(links)}个节点，生成三种订阅文件')
     urlfile = Path('/root/subscription-url.txt')
     if urlfile.is_file() and urlfile.read_text().strip().endswith(f'/{token}.txt'):
         original = urlfile.read_text().strip()
