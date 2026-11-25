@@ -65,6 +65,18 @@ fi
 curl -fL --retry 3 "$BASE/auto-sync-install.sh" -o /root/sbp-sub-auto-install.sh
 chmod 700 /root/sbp-sub-auto-install.sh
 bash /root/sbp-sub-auto-install.sh
+# Install the unified manager entry point for subsequent maintenance.
+if test ! -s /root/sbp-manager.sh; then
+  MANAGER_TMP=$(mktemp /root/.sbp-manager-launcher.XXXXXX)
+  if curl -fLsS --retry 2 "$BASE/sbp-manager.sh" -o "$MANAGER_TMP" &&
+     bash -n "$MANAGER_TMP"; then
+    install -m 700 "$MANAGER_TMP" /root/sbp-manager.sh
+    echo "Unified manager: bash /root/sbp-manager.sh"
+  else
+    echo "Base deployment finished; manager download failed. See README for manual download." >&2
+  fi
+  rm -f "$MANAGER_TMP"
+fi
 echo "Allow inbound TCP 80/443 and all node ports in provider firewall."
 echo "Private subscriptions:"
 cat /root/subscription-url.txt
