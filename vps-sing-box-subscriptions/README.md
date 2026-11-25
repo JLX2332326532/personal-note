@@ -4,7 +4,7 @@ An installer for **your own Debian 13 VPS** based on the third-party [Sing-Box-P
 
 [中文说明](./README_zh.md)
 
-The base installer deploys 20 nodes; the optional dual-VPS extension below adds ten independent landing nodes (30 total).
+The base installer deploys 20 nodes; the optional dual-VPS extension below adds ten independent landing nodes (30 total). The independent unified manager at the end of this guide supports maintenance of both layouts.
 
 ## Fresh VPS installation
 
@@ -312,7 +312,7 @@ Run `bash /root/sing-box-plus.sh`. This is the original upstream v4.8.0 menu; **
 | 8 | Uninstall upstream base deployment, not the complete dual-VPS stack; may break landing dependencies/subscriptions |
 | 0 | Exit |
 
-There is currently no integrated menu for adding/replacing/removing B, automatic landing-port rotation, or one-command dual-VPS removal.
+The upstream menu above is unchanged. The new independent unified manager documented below provides add/switch/remove landing operations and 20/30-node port rotation.
 
 ### Script and service responsibilities
 
@@ -347,7 +347,7 @@ journalctl -u sing-box-landing-exit.service -n 30 --no-pager
 ss -lntup | grep 24443
 ```
 
-Changing the landing server or shared link key requires coordinated changes to B's inbound, A's landing outbound and A's test-client configuration. Back up private configs and retest the exit before applying changes. Changing an extra inbound port requires consistent edits to A's landing config and link file (VMess stores the port inside Base64 JSON), firewall updates, a service restart and subscription sync. These changes are not automated by the current installer.
+Changing the landing server or shared link key requires coordinated changes to B's inbound, A's landing outbound and A's test-client configuration. Back up private configs and retest the exit before applying changes. Changing an extra inbound port requires consistent edits to A's landing config and link file (VMess stores the port inside Base64 JSON), firewall updates, a service restart and subscription sync. These changes can now be performed through the independent unified manager; the manual description remains a maintenance reference.
 
 ### Files and troubleshooting
 
@@ -376,3 +376,62 @@ Changing the landing server or shared link key requires coordinated changes to B
 | Landing selected but wrong exit | Select the landing group and a landing node, verify traffic actually matches a proxy rule, and avoid the base automatic group |
 
 This guide uses only documentation example addresses. Production node links, passwords, UUIDs and tokens must remain private.
+
+## Unified manager v1.0 (optional 20/30-node maintenance)
+
+The project now provides independent `sbp-manager.sh` and `sbp-manager.py` on relay A. The upstream Sing-Box-Plus script is retained unmodified. Startup does not reinstall or rotate existing nodes. The base installer also attempts to install the launcher.
+
+### Quick start on an existing relay
+
+```bash
+curl -fL \
+  https://raw.githubusercontent.com/JLX2332326532/personal-note/main/vps-sing-box-subscriptions/sbp-manager.sh \
+  -o /root/sbp-manager.sh
+# Review the launcher and Python core first.
+bash /root/sbp-manager.sh
+```
+
+The launcher downloads the core into `/root/.sbp-manager/sbp-manager.py` on first use, compiles it and runs an offline self-test. Subsequent launches use the local core.
+
+```bash
+bash /root/sbp-manager.sh --version
+bash /root/sbp-manager.sh --self-test
+```
+
+### Menu operations
+
+The interactive menu is in Chinese; this table documents its options.
+
+| Option | Operation and scope |
+| --- | --- |
+| 1 | Install the base 20 nodes and HTTPS subscription; synchronize rather than reinstall if a working installation already exists. |
+| 2 | Extract and validate the base IPv4 links and optional ten landing links; display sensitive links only after confirmation. |
+| 3 | Validate and restart local base/optional landing inbound services and sync subscriptions. |
+| 4 | Rotate all deployed 20/30 inbound ports. Select unused ports in 12000–44999 for base and 55000–55099 for landing; back up, rewrite base config/ports.env and landing config/links, validate, restart, verify listeners, and sync. |
+| 5 | Enable BBR/fq on A and persist sysctl settings. |
+| 6 | Show original base IPv6 links. Landing inbounds currently listen on IPv4; merged subscriptions are IPv4. |
+| 7 | Add ten landing inbounds: reuse a prepared test-client.json, connect to an existing SS2022 exit, or install a new B exit through SSH. |
+| 8 | Test a new B exit first, switch the isolated A landing outbound while preserving ten client-facing ports/credentials/links. Attempt local rollback on validation/test/sync failure. Old B remains installed. |
+| 9 | Back up and remove the landing extension on A; regenerate 20-node subscriptions. Optional confirmed SSH shutdown of the dedicated B exit service, retaining B and its configuration. |
+| 10 | Probe actual public TCP exit through each group's SS2022 inbound; does not verify every protocol or UDP. |
+| 11 | Display three private subscription URLs and two routing-config URLs after confirmation. |
+| 12 | Force subscription synchronization; optionally download and install the latest sync component. |
+| 13 | Service statuses and recent synchronization logs. |
+| 14 | Download the launcher and core from GitHub main, check syntax, run offline self-test, then update; relaunch afterward. Update subscription components via option 12. |
+| 15 | Pause synchronization and back up local project files, subscription credentials, selected systemd unit files and state to root-only /root/sbp-backups/. |
+| 16 | Restore a same-machine backup, taking a rescue snapshot first. Validate and start saved services; attempt to restore the rescue snapshot on failure. Brief service interruption is possible. |
+| 0 | Exit. |
+
+### Landing lifecycle
+
+Options 7 and 8 offer three modes: reuse the prepared private A-side `/root/sbp-landing/test-client.json`, connect to an already configured SS2022 exit, or install a new dedicated B-side service through SSH. SSH deployment requires verified host keys, root access, matching CPU/compatible Linux and systemd on B, and the provider/local firewall allowing only A's actual source IP to reach TCP/UDP 24443. The manager prompts for the public connection IPv4, expected observed exit IPv4 and SSH port. SSH itself prompts for authentication; existing SS2022 keys are read without echo. Fresh keys are generated locally, never committed.
+
+The SSH installer refuses to overwrite an existing dedicated B service. Reuse the existing-service option if appropriate. If B is successfully provisioned but subsequent A operations fail, B may remain active. Switching B does not stop the previous exit. Removing the A extension does not delete the rented VPS or its configuration; an optional explicit SSH confirmation can stop its dedicated exit service.
+
+### Important operational boundaries
+
+The **upstream** option 4 still rotates only the base 20 ports. The **unified manager** option 4 rotates all deployed inbound ports. It assumes the known upstream v4.8.0 config and ports.env format, checks the generated links afterward and refuses unknown layouts. It displays the new ports before applying changes and asks for confirmation that the provider firewall allows them. If UFW is active, confirmed local TCP/UDP allow rules can be added. Old firewall rules are deliberately not removed; new rules may remain after a rollback. Provider firewalls are not managed by this script.
+
+Backups are private, local to A and machine-ID-bound. They include subscription credentials and must never be published. They do not include remote B state, firewall rules, installed binary versions or Caddy's ACME certificate storage. A restore may restore an earlier URL/token and ports; verify the corresponding firewall and B service are still valid. It is not a full-system or portable backup.
+
+The launcher and updater include Python compilation and a synthetic offline self-test for port mapping, link rewriting, environment validation and SS2022 link configuration. Production SSH, port rotations, rollback/restore, UDP forwarding and all client protocols still need real VPS integration tests. Start with options 13, 10 and 15 before changing live configurations.
