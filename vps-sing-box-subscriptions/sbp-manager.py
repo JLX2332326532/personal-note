@@ -427,12 +427,14 @@ def remove_item(p):
         p.unlink(missing_ok=True)
 
 def snapshot(label):
-    # Keep published subscription files stable while taking a local backup.
+    # Record the original watcher state before pausing it for a consistent copy.
+    prior_active = [u for u in SNAP_UNITS if active(u)]
+    prior_enabled = [u for u in SNAP_UNITS if enabled(u)]
     with pause_sync():
-        return snapshot_files(label)
+        return snapshot_files(label, prior_active, prior_enabled)
 
 
-def snapshot_files(label):
+def snapshot_files(label, prior_active, prior_enabled):
     BACKUPS.mkdir(mode=0o700, exist_ok=True)
     os.chmod(BACKUPS, 0o700)
     d = Path(tempfile.mkdtemp(prefix=time.strftime('%Y%m%d-%H%M%S')+'-'+label+'-', dir=BACKUPS))
@@ -443,8 +445,8 @@ def snapshot_files(label):
             copy_item(p, d/'files'/str(p).lstrip('/'))
             paths.append(str(p))
     dump(d/'manifest.json', {'version':1, 'machine':Path('/etc/machine-id').read_text().strip(),
-                            'present': paths, 'active': [u for u in SNAP_UNITS if active(u)],
-                            'enabled': [u for u in SNAP_UNITS if enabled(u)]})
+                            'present': paths, 'active': prior_active,
+                            'enabled': prior_enabled})
     print('本机私有备份：' + str(d))
     return d
 
