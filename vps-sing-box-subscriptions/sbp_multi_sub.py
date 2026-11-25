@@ -107,7 +107,23 @@ def routing_rules():
         {'remarks': '常用境外服务优先代理', 'outboundTag': 'proxy',
          'domain': ['domain:github.com', 'domain:githubusercontent.com',
                     'domain:openai.com', 'domain:chatgpt.com',
-                    'domain:google.com', 'domain:youtube.com'], 'enabled': True},
+                    'domain:google.com',
+                    'domain:googleapis.com',
+                    'domain:googleapis.cn',
+                    'domain:gstatic.com',
+                    'domain:googleusercontent.com',
+                    'domain:gvt1.com',
+                    'domain:gvt2.com',
+                    'domain:gvt3.com',
+                    'domain:ggpht.com',
+                    'domain:android.com',
+                    'domain:googlevideo.com',
+                    'domain:youtube.com',
+                    'domain:ytimg.com',
+                    'domain:g.co',
+                    'domain:googlezip.net',
+                    'domain:pki.goog',
+                    'domain:google-analytics.com'], 'enabled': True},
         {'remarks': '中国大陆域名直连', 'outboundTag': 'direct',
          'domain': ['geosite:cn'], 'enabled': True},
         {'remarks': '中国大陆 IP 直连', 'outboundTag': 'direct',
@@ -138,7 +154,22 @@ DOMAIN-SUFFIX,githubusercontent.com,PROXY
 DOMAIN-SUFFIX,openai.com,PROXY
 DOMAIN-SUFFIX,chatgpt.com,PROXY
 DOMAIN-SUFFIX,google.com,PROXY
+DOMAIN-SUFFIX,googleapis.com,PROXY
+DOMAIN-SUFFIX,googleapis.cn,PROXY
+DOMAIN-SUFFIX,gstatic.com,PROXY
+DOMAIN-SUFFIX,googleusercontent.com,PROXY
+DOMAIN-SUFFIX,gvt1.com,PROXY
+DOMAIN-SUFFIX,gvt2.com,PROXY
+DOMAIN-SUFFIX,gvt3.com,PROXY
+DOMAIN-SUFFIX,ggpht.com,PROXY
+DOMAIN-SUFFIX,android.com,PROXY
+DOMAIN-SUFFIX,googlevideo.com,PROXY
 DOMAIN-SUFFIX,youtube.com,PROXY
+DOMAIN-SUFFIX,ytimg.com,PROXY
+DOMAIN-SUFFIX,g.co,PROXY
+DOMAIN-SUFFIX,googlezip.net,PROXY
+DOMAIN-SUFFIX,pki.goog,PROXY
+DOMAIN-SUFFIX,google-analytics.com,PROXY
 DOMAIN-SUFFIX,cn,DIRECT
 RULE-SET,https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/China/China.list,DIRECT
 DOMAIN-SET,https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/China/China_Domain.list,DIRECT
@@ -214,7 +245,22 @@ def main():
             'DOMAIN-SUFFIX,openai.com,节点选择',
             'DOMAIN-SUFFIX,chatgpt.com,节点选择',
             'DOMAIN-SUFFIX,google.com,节点选择',
+            'DOMAIN-SUFFIX,googleapis.com,节点选择',
+            'DOMAIN-SUFFIX,googleapis.cn,节点选择',
+            'DOMAIN-SUFFIX,gstatic.com,节点选择',
+            'DOMAIN-SUFFIX,googleusercontent.com,节点选择',
+            'DOMAIN-SUFFIX,gvt1.com,节点选择',
+            'DOMAIN-SUFFIX,gvt2.com,节点选择',
+            'DOMAIN-SUFFIX,gvt3.com,节点选择',
+            'DOMAIN-SUFFIX,ggpht.com,节点选择',
+            'DOMAIN-SUFFIX,android.com,节点选择',
+            'DOMAIN-SUFFIX,googlevideo.com,节点选择',
             'DOMAIN-SUFFIX,youtube.com,节点选择',
+            'DOMAIN-SUFFIX,ytimg.com,节点选择',
+            'DOMAIN-SUFFIX,g.co,节点选择',
+            'DOMAIN-SUFFIX,googlezip.net,节点选择',
+            'DOMAIN-SUFFIX,pki.goog,节点选择',
+            'DOMAIN-SUFFIX,google-analytics.com,节点选择',
             'DOMAIN-SUFFIX,cn,DIRECT',
             'RULE-SET,cn-domain,DIRECT',
             'RULE-SET,cn-ip,DIRECT,no-resolve',
